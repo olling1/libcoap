@@ -92,9 +92,27 @@ typedef struct coap_resource_t {
    * memory.
    */
   str uri;
+  str A; /** The source IP address and source port of the request*/
+
+  str data; /**< points to the resource description  */
+
   int flags;
 
 } coap_resource_t;
+
+/**
+ * Creates a new resource object in the resource directory and initializes the link field to the string
+ * of length @p len. This function returns the new coap_resource_t object.
+ *
+ * @param uri        The URI path of the new resource.
+ * @param len        The length of @p uri.
+ * @param key_uri    The URI path of the identifier of the resource.
+ * @param key_len    The length of @p key_uri.
+ * @param flags      Flags for memory management (in particular release of memory).
+ *
+ * @return       A pointer to the new object or @c NULL on error.
+ */
+coap_resource_t *coap_resource_rd_init(const unsigned char *uri, size_t len, const unsigned char *key_uri, size_t key_len, int flags);
 
 /**
  * Creates a new resource object and initializes the link field to the string

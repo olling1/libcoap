@@ -189,12 +189,12 @@ coap_print_wellknown(coap_context_t *context, unsigned char *buf, size_t *buflen
 #ifndef WITHOUT_QUERY_FILTER
   /* split query filter, if any */
   if (query_filter) {
-    resource_param.s = COAP_OPT_VALUE(query_filter);
-    while (resource_param.length < COAP_OPT_LENGTH(query_filter)
+    resource_param.s = coap_opt_value(query_filter);
+    while (resource_param.length < coap_opt_length(query_filter)
 	   && resource_param.s[resource_param.length] != '=')
       resource_param.length++;
     
-    if (resource_param.length < COAP_OPT_LENGTH(query_filter)) {
+    if (resource_param.length < coap_opt_length(query_filter)) {
       const str *rt_attributes;
       if (resource_param.length == 4 && 
 	  memcmp(resource_param.s, "href", 4) == 0)
@@ -210,11 +210,11 @@ coap_print_wellknown(coap_context_t *context, unsigned char *buf, size_t *buflen
 
       /* rest is query-pattern */
       query_pattern.s = 
-	COAP_OPT_VALUE(query_filter) + resource_param.length + 1;
+	coap_opt_value(query_filter) + resource_param.length + 1;
 
-      assert((resource_param.length + 1) <= COAP_OPT_LENGTH(query_filter));
+      assert((resource_param.length + 1) <= coap_opt_length(query_filter));
       query_pattern.length = 
-	COAP_OPT_LENGTH(query_filter) - (resource_param.length + 1);
+	coap_opt_length(query_filter) - (resource_param.length + 1);
 
      if ((query_pattern.s[0] == '/') && ((flags & MATCH_URI) == MATCH_URI)) {
        query_pattern.s++;
@@ -231,7 +231,7 @@ coap_print_wellknown(coap_context_t *context, unsigned char *buf, size_t *buflen
 #endif /* WITHOUT_QUERY_FILTER */
 
   RESOURCES_ITER(context->resources, r) {
-
+   
 #ifndef WITHOUT_QUERY_FILTER
     if (resource_param.length) { /* there is a query filter */
       
@@ -282,6 +282,32 @@ coap_print_wellknown(coap_context_t *context, unsigned char *buf, size_t *buflen
     result |= COAP_PRINT_STATUS_TRUNC;
   }
   return result;
+}
+
+coap_resource_t *
+coap_resource_rd_init(const unsigned char *uri, size_t len, const unsigned char *key_uri, size_t key_len, int flags) {
+  coap_resource_t *r;
+
+#ifdef WITH_LWIP
+  r = (coap_resource_t *)memp_malloc(MEMP_COAP_RESOURCE);
+#endif
+#ifndef WITH_LWIP
+  r = (coap_resource_t *)coap_malloc_type(COAP_RESOURCE, sizeof(coap_resource_t));
+#endif
+  if (r) {
+    memset(r, 0, sizeof(coap_resource_t));
+
+    r->uri.s = (unsigned char *)uri;
+    r->uri.length = len;
+    
+    coap_hash_path(key_uri, key_len, r->key);
+    
+    r->flags = flags;
+  } else {
+    debug("coap_resource_init: no memory left\n");
+  }
+  
+  return r;
 }
 
 coap_resource_t *
@@ -391,8 +417,10 @@ coap_hash_request_uri(const coap_pdu_t *request, coap_key_t key) {
   coap_option_setb(filter, COAP_OPTION_URI_PATH);
 
   coap_option_iterator_init((coap_pdu_t *)request, &opt_iter, filter);
-  while ((option = coap_option_next(&opt_iter)))
-    coap_hash(COAP_OPT_VALUE(option), COAP_OPT_LENGTH(option), key);
+
+  while ((option = coap_option_next(&opt_iter))){
+    coap_hash(coap_opt_value(option), coap_opt_length(option), key);
+  }
 }
 
 void
@@ -508,6 +536,20 @@ coap_print_link(const coap_resource_t *resource,
   }
   if (resource->observable) {
     COPY_COND_WITH_OFFSET(p, bufend, *offset, ";obs", 4, *len);
+  }
+
+  /* print the IP of the node having the resource in debuging mode*/
+  if (coap_get_log_level()>8){
+    if(resource->A.s){
+      COPY_COND_WITH_OFFSET(p, bufend, *offset, ";A=\"", 4, *len);
+      COPY_COND_WITH_OFFSET(p, bufend, *offset, resource->A.s, resource->A.length, *len);
+      COPY_COND_WITH_OFFSET(p, bufend, *offset, ";", 1, *len);
+    }
+  }
+
+  /* print the information of the resource*/
+  if (resource->data.s) {
+    COPY_COND_WITH_OFFSET(p, bufend, *offset, resource->data.s, resource->data.length, *len);
   }
 
   result = p - buf;

@@ -1108,8 +1108,8 @@ coap_new_error_response(coap_pdu_t *request, unsigned char code,
     coap_option_iterator_init(request, &opt_iter, opts);
     while((option = coap_option_next(&opt_iter)))
       coap_add_option(response, opt_iter.type, 
-		      COAP_OPT_LENGTH(option),
-		      COAP_OPT_VALUE(option));
+		      coap_opt_length(option),
+		      coap_opt_value(option));
 
 #if COAP_ERROR_PHRASE_LENGTH > 0
     /* note that diagnostic messages do not need a Content-Format option. */
@@ -1176,8 +1176,8 @@ coap_wellknown_response(coap_context_t *context, coap_pdu_t *request) {
   /* The value of some resources is undefined and get_wkc_len will return 0.*/
   if (wkc_len == 0){
     debug("coap_wellknown_response: undefined resource\n");
-    /* set error code 4.00 Bad Request*/
-    resp->hdr->code = COAP_RESPONSE_CODE(400);
+    /* set error code 4.04 Not Found*/
+    resp->hdr->code = COAP_RESPONSE_CODE(404);
     resp->length = sizeof(coap_hdr_t) + resp->hdr->token_length;
     return resp;
   }
@@ -1303,7 +1303,7 @@ coap_cancel(coap_context_t *context, const coap_queue_t *sent) {
 /**
  * Checks for No-Response option in given @p request and
  * returns @c 1 if @p response should be suppressed
- * according to draft-tcs-coap-no-response-option-11.txt.
+ * according to draft-tcs-coap-no-response-option-14.txt.
  * 
  * The value of the No-Response option is encoded as
  * follows:
@@ -1348,6 +1348,16 @@ no_response(coap_pdu_t *request, coap_pdu_t *response) {
     && (((1 << (COAP_RESPONSE_CLASS(response->hdr->code) - 1)) & val) > 0);
 }
 
+static int 
+compare(unsigned char *a, unsigned char *b, int size) {
+  while(size-- > 0) {
+    if ( *a != *b ) { return (*a < *b ) ? -1 : 1; }
+      a++; b++;
+  }
+  return 0;
+ }
+
+
 #define WANT_WKC(Pdu,Key)					\
   (((Pdu)->hdr->code == COAP_REQUEST_GET) && is_wkc(Key))
 
@@ -1356,148 +1366,209 @@ handle_request(coap_context_t *context, coap_queue_t *node) {
   coap_method_handler_t h = NULL;
   coap_pdu_t *response = NULL;
   coap_opt_filter_t opt_filter;
+  coap_opt_iterator_t opt_iter;
   coap_resource_t *resource;
   coap_key_t key;
+  //coap_opt_t *option;
 
-  coap_option_filter_clear(opt_filter);
+  /*coap_option_filter_clear(opt_filter);
   
-  /* try to find the resource from the request URI */
-  coap_hash_request_uri(node->pdu, key);
-  resource = coap_get_resource_from_key(context, key);
-  
-  if (!resource) {
-    /* The resource was not found. Check if the request URI happens to
-     * be the well-known URI. In that case, we generate a default
-     * response, otherwise, we return 4.04 */
+  memset(key, 0, sizeof(coap_key_t));
 
-    switch(node->pdu->hdr->code) {
+  coap_option_setb(opt_filter, COAP_OPTION_URI_PATH);
 
-    case COAP_REQUEST_GET: 
-      if (is_wkc(key)) {	/* GET request for .well-known/core */
-	info("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
-	response = coap_wellknown_response(context, node->pdu);
+  coap_option_iterator_init((coap_pdu_t *)node->pdu, &opt_iter, opt_filter);
 
-      } else { /* GET request for any another resource, return 4.04 */
+  option = coap_option_next(&opt_iter);*/
 
-	debug("GET for unknown resource 0x%02x%02x%02x%02x, return 4.04\n", 
-	      key[0], key[1], key[2], key[3]);
-	response = 
-	  coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(404), 
-				  opt_filter);
-      }
-      break;
+//  if (!compare(coap_opt_value(option), (unsigned char*)"rd", COAP_OPT_LENGTH(option))){
+//    debug("handle_request: the request includes an 'rd' in the Uri-Path\n");
 
-    default: 			/* any other request type */
+  //  coap_hash(coap_opt_value(option), coap_opt_length(option), key);
 
-      debug("unhandled request for unknown resource 0x%02x%02x%02x%02x\r\n",
-	    key[0], key[1], key[2], key[3]);
+    /*while ((option = coap_option_next(&opt_iter))){
 
-	response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
-					   opt_filter);
-    }
-      
-    if (response && !no_response(node->pdu, response) && coap_send(context, &node->local_if, 
-			      &node->remote, response) == COAP_INVALID_TID) {
-      warn("cannot send response for transaction %u\n", node->id);
-    }
-    coap_delete_pdu(response);
+      coap_hash(coap_opt_value(option), coap_opt_length(option), key);
+    }*/
 
-    return;
-  }
-  
-  /* the resource was found, check if there is a registered handler */
-  if ((size_t)node->pdu->hdr->code - 1 <
-      sizeof(resource->handler)/sizeof(coap_method_handler_t))
-    h = resource->handler[node->pdu->hdr->code - 1];
-  
-  if (h) {
-    debug("call custom handler for resource 0x%02x%02x%02x%02x\n", 
-	  key[0], key[1], key[2], key[3]);
-    response = coap_pdu_init(node->pdu->hdr->type == COAP_MESSAGE_CON 
-			     ? COAP_MESSAGE_ACK
-			     : COAP_MESSAGE_NON,
-			     0, node->pdu->hdr->id, COAP_MAX_PDU_SIZE);
-    
-    /* Implementation detail: coap_add_token() immediately returns 0
-       if response == NULL */
-    if (coap_add_token(response, node->pdu->hdr->token_length,
-		       node->pdu->hdr->token)) {
-      str token = { node->pdu->hdr->token_length, node->pdu->hdr->token };
-      coap_opt_iterator_t opt_iter;
-      coap_opt_t *observe = NULL;
-      int observe_action = COAP_OBSERVE_CANCEL;
+      //coap_option_filter_clear(opt_filter);
 
-      /* check for Observe option */
-      if (resource->observable) {
-	observe = coap_check_option(node->pdu, COAP_OPTION_OBSERVE, &opt_iter);
-	if (observe) {
-	  observe_action =
-	    coap_decode_var_bytes(coap_opt_value(observe),
-				  coap_opt_length(observe));
+      /* try to find the resource from the request URI */
+      coap_hash_request_uri(node->pdu, key);
+      resource = coap_get_resource_from_key(context, key);
+
+      if (!resource) {
+        /* The resource was not found. Check if the request URI happens to
+         * be the well-known URI. In that case, we generate a default
+         * response, otherwise, we return 4.04 */
+
+        switch(node->pdu->hdr->code) {
+
+        case COAP_REQUEST_GET: 
+          if (is_wkc(key)) {	/* GET request for .well-known/core */
+	   info("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
+  	   response = coap_wellknown_response(context, node->pdu);
 	 
-	  if ((observe_action & COAP_OBSERVE_CANCEL) == 0) {
-	    coap_subscription_t *subscription;
+          } else { /* GET request for any another resource, return 4.04 */
 
-	    coap_log(LOG_DEBUG, "create new subscription\n");
-	    subscription = coap_add_observer(resource, &node->local_if, 
-					     &node->remote, &token);
-	    if (subscription) {
-	      coap_touch_observer(context, &node->remote, &token);
-	    }
-	  }
-	}
-      }
+ 	  debug("GET for unknown resource 0x%02x%02x%02x%02x, return 4.04\n", 
+	        key[0], key[1], key[2], key[3]);
+ 	  response = 
+	    coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(404), 
+		  		    opt_filter);
+          }
+          break;
 
-      h(context, resource, &node->local_if, &node->remote,
-	node->pdu, &token, response);
+       default: /* any other request type */
 
-      if (!no_response(node->pdu, response)) {
-      if (observe && ((COAP_RESPONSE_CLASS(response->hdr->code) > 2)
-		      || ((observe_action & COAP_OBSERVE_CANCEL) != 0))) {
-	coap_log(LOG_DEBUG, "removed observer");
-	coap_delete_observer(resource,  &node->remote, &token);
-      }
+          debug("unhandled request for unknown resource 0x%02x%02x%02x%02x\r\n",
+	       key[0], key[1], key[2], key[3]);
 
-      /* If original request contained a token, and the registered
-       * application handler made no changes to the response, then
-       * this is an empty ACK with a token, which is a malformed
-       * PDU */
-      if ((response->hdr->type == COAP_MESSAGE_ACK)
-	  && (response->hdr->code == 0)) {
-	/* Remove token from otherwise-empty acknowledgment PDU */
-	response->hdr->token_length = 0;
-	response->length = sizeof(coap_hdr_t);
-      }
-
-      if (response->hdr->type != COAP_MESSAGE_NON ||
-	  (response->hdr->code >= 64 
-	   && !coap_mcast_interface(&node->local_if))) {
-
-	if (coap_send(context, &node->local_if, 
-		      &node->remote, response) == COAP_INVALID_TID) {
-	  debug("cannot send response for message %d\n", node->pdu->hdr->id);
-	  }
-      }
+  	    response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
+  		 			     opt_filter);
+       }
+      
+      if (response && !no_response(node->pdu, response) && coap_send(context, &node->local_if, 
+			        &node->remote, response) == COAP_INVALID_TID) {
+        warn("cannot send response for transaction %u\n", node->id);
       }
       coap_delete_pdu(response);
-    } else {
-      warn("cannot generate response\r\n");
+
+      return;
     }
-  } else {
-    if (WANT_WKC(node->pdu, key)) {
-      debug("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
-      response = coap_wellknown_response(context, node->pdu);
-      debug("have wellknown response %p\n", (void *)response);
-    } else
-      response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
-					 opt_filter);
+  
+    /* the resource was found, check if there is a registered handler */
+    if ((size_t)node->pdu->hdr->code - 1 <
+        sizeof(resource->handler)/sizeof(coap_method_handler_t))
+      h = resource->handler[node->pdu->hdr->code - 1];
+  
+    if (h) {
+      debug("call custom handler for resource 0x%02x%02x%02x%02x\n", 
+	    key[0], key[1], key[2], key[3]);
+      response = coap_pdu_init(node->pdu->hdr->type == COAP_MESSAGE_CON 
+			       ? COAP_MESSAGE_ACK
+			       : COAP_MESSAGE_NON,
+			       0, node->pdu->hdr->id, COAP_MAX_PDU_SIZE);
     
-    if (!response || (coap_send(context, &node->local_if, &node->remote,
-				response) == COAP_INVALID_TID)) {
-      debug("cannot send response for transaction %u\n", node->id);
-    }
-    coap_delete_pdu(response);
-  }  
+      /* Implementation detail: coap_add_token() immediately returns 0
+         if response == NULL */
+      if (coap_add_token(response, node->pdu->hdr->token_length,
+		         node->pdu->hdr->token)) {
+        str token = { node->pdu->hdr->token_length, node->pdu->hdr->token };
+        //coap_opt_iterator_t opt_iter;
+        coap_opt_t *observe = NULL;
+        int observe_action = COAP_OBSERVE_CANCEL;
+
+        /* check for Observe option */
+        if (resource->observable) {
+	  observe = coap_check_option(node->pdu, COAP_OPTION_OBSERVE, &opt_iter);
+	  if (observe) {
+	    observe_action =
+	      coap_decode_var_bytes(coap_opt_value(observe),
+				    coap_opt_length(observe));
+	 
+	    if ((observe_action & COAP_OBSERVE_CANCEL) == 0) {
+	      coap_subscription_t *subscription;
+
+	      coap_log(LOG_DEBUG, "create new subscription\n");
+	      subscription = coap_add_observer(resource, &node->local_if, 
+					       &node->remote, &token);
+	      if (subscription) {
+	        coap_touch_observer(context, &node->remote, &token);
+	      }
+	    }
+	  }
+        }
+
+        h(context, resource, &node->local_if, &node->remote,
+	  node->pdu, &token, response);
+
+        if (!no_response(node->pdu, response)) {
+        if (observe && ((COAP_RESPONSE_CLASS(response->hdr->code) > 2)
+		        || ((observe_action & COAP_OBSERVE_CANCEL) != 0))) {
+	  coap_log(LOG_DEBUG, "removed observer");
+	  coap_delete_observer(resource,  &node->remote, &token);
+        }
+
+        /* If original request contained a token, and the registered
+         * application handler made no changes to the response, then
+         * this is an empty ACK with a token, which is a malformed
+         * PDU */
+        if ((response->hdr->type == COAP_MESSAGE_ACK)
+	    && (response->hdr->code == 0)) {
+	  /* Remove token from otherwise-empty acknowledgment PDU */
+	  response->hdr->token_length = 0;
+	  response->length = sizeof(coap_hdr_t);
+        }
+
+        if (response->hdr->type != COAP_MESSAGE_NON ||
+	    (response->hdr->code >= 64 
+	     && !coap_mcast_interface(&node->local_if))) {
+
+	  if (coap_send(context, &node->local_if, 
+		        &node->remote, response) == COAP_INVALID_TID) {
+	    debug("cannot send response for message %d\n", node->pdu->hdr->id);
+	   }
+        }
+        }
+        coap_delete_pdu(response);
+      } else {
+        warn("cannot generate response\r\n");
+      }
+    } else {
+      if (WANT_WKC(node->pdu, key)) {
+        debug("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
+        response = coap_wellknown_response(context, node->pdu);
+        debug("have wellknown response %p\n", (void *)response);
+      } else
+        response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
+					   opt_filter);
+    
+      if (!response || (coap_send(context, &node->local_if, &node->remote,
+				  response) == COAP_INVALID_TID)) {
+        debug("cannot send response for transaction %u\n", node->id);
+      }
+      coap_delete_pdu(response);
+    } 
+  //} else if  (!compare(coap_opt_value(option), (unsigned char*)".well-known", coap_opt_length(option))){
+  //} else if (is_wkc(key)) {	/* request for .well-known/core */
+    /* debug("handle_request: the request includes an %s in the Uri-Path\n", COAP_DEFAULT_URI_WELLKNOWN);
+
+     switch(node->pdu->hdr->code) {
+     case COAP_REQUEST_GET: 
+	  info("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
+  	  response = coap_wellknown_response(context, node->pdu);	  
+        break;
+     default: */			/* any other request type */
+
+/*        debug("unhandled request for unknown resource 0x%02x%02x%02x%02x\r\n",
+	      key[0], key[1], key[2], key[3]);
+
+  	  response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
+		 			     opt_filter);
+     }
+
+      if (!response || (coap_send(context, &node->local_if, &node->remote,
+				  response) == COAP_INVALID_TID)) {
+        debug("cannot send response for transaction %u\n", node->id);
+      }
+      coap_delete_pdu(response);
+     
+  } else if (!compare(coap_opt_value(option), (unsigned char*)"rd-group", coap_opt_length(option))){
+     debug("handle_request: the request includes an '.rd-group' in the Uri-Path\n");
+  } else if (!compare(coap_opt_value(option), (unsigned char*)"rd-lookup", coap_opt_length(option))){
+     debug("handle_request: the request includes an 'rd-lookup' in the Uri-Path\n");
+  } else {
+     debug("handle_request: malformed URI sequence");
+     response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
+					   opt_filter);
+    
+      if (!response || (coap_send(context, &node->local_if, &node->remote,
+				  response) == COAP_INVALID_TID)) {
+        debug("cannot send response for transaction %u\n", node->id);
+      }
+      coap_delete_pdu(response);
+  }*/ 
 }
 
 static inline void

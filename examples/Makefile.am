@@ -9,7 +9,7 @@
 if BUILD_EXAMPLES
 
 # picking up the default warning CFLAGS into AM_CFLAGS
-AM_CFLAGS = -isystem@top_builddir@/include/coap/ $(WARNING_CFLAGS) -std=c99
+AM_CFLAGS = -isystem@top_builddir@/include/coap/ $(WARNING_CFLAGS) $(libxml2_CFLAGS) -std=c99
 
 # etsi_iot_01 and tiny are missing
 bin_PROGRAMS = coap-client coap-server coap-rd
@@ -20,8 +20,8 @@ coap_client_LDADD = @top_builddir@/.libs/libcoap-$(LIBCOAP_API_VERSION).la
 coap_server_SOURCES = coap-server.c
 coap_server_LDADD = @top_builddir@/.libs/libcoap-$(LIBCOAP_API_VERSION).la
 
-coap_rd_SOURCES = coap-rd.c
-coap_rd_LDADD = @top_builddir@/.libs/libcoap-$(LIBCOAP_API_VERSION).la
+coap_rd_SOURCES = coap-rd.c lifetime_list.c
+coap_rd_LDADD = @top_builddir@/.libs/libcoap-$(LIBCOAP_API_VERSION).la $(libxml2_LIBS)
 
 # build manuals only if 'BUILD_DOCUMENTATION' is defined
 if BUILD_DOCUMENTATION
