@@ -37,7 +37,6 @@ static int quit = 0;
 
 #define COAP_OPT_BLOCK_SZX_MAX 6 /**< allowed maximum for block szx value */
 
-#define REQUIRE_ETAG 0x01 	/* flag for coap_payload_t: require ETag option  */
 typedef struct {
   UT_hash_handle hh;
   coap_key_t resource_key;	/* foreign key that points into resource space */
@@ -147,7 +146,7 @@ void
 hnd_get_resource(coap_context_t  *ctx, struct coap_resource_t *resource, 
 		 coap_address_t *peer, coap_pdu_t *request, str *token,
 		 coap_pdu_t *response) {
-  coap_key_t etag;
+
   unsigned char buf[2];
   coap_payload_t *test_payload;
   coap_block_t block;
@@ -163,13 +162,6 @@ hnd_get_resource(coap_context_t  *ctx, struct coap_resource_t *resource,
 
   coap_add_option(response, COAP_OPTION_CONTENT_TYPE,
 	  coap_encode_var_bytes(buf, test_payload->media_type), buf);
-
-  /* add etag for the resource */
-  if (test_payload->flags & REQUIRE_ETAG) {
-    memset(etag, 0, sizeof(etag));
-    coap_hash(test_payload->data, test_payload->length, etag);
-    coap_add_option(response, COAP_OPTION_ETAG, sizeof(etag), etag);
-  }
       
   if (request) {
     int res;
@@ -570,8 +562,6 @@ init_resources(coap_context_t *ctx) {
     coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"41", 2, 0);
     coap_add_attr(r, (unsigned char *)"rt", 2, (unsigned char *)"large", 5, 0);
     coap_add_resource(ctx, r);
-
-    test_payload->flags |= REQUIRE_ETAG;
 
     coap_add_payload(r->key, test_payload, NULL);
   }

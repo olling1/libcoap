@@ -27,7 +27,7 @@ EXTRA_DIST = \
   tests/test_uri.h \
   tests/test_wellknown.h
 
-AM_CFLAGS = -I @top_builddir@/include/coap/ $(WARNING_CFLAGS) -std=c99
+AM_CFLAGS = -I @top_builddir@/include/coap/  $(WARNING_CFLAGS) ${libxml2_CFLAGS} -std=c99
 
 SUBDIRS = . $(DOC_DIR) tests examples
 
@@ -104,10 +104,13 @@ libcoap_include_HEADERS = \
 ## Instruct libtool to include API version information in the generated shared
 ## library file (.so). The library ABI version will later defined in configure.ac,
 ## so that all version information is kept in one place.
+
+
 libcoap_@LIBCOAP_API_VERSION@_la_LDFLAGS =					\
   -version-info $(LT_LIBCOAP_CURRENT):$(LT_LIBCOAP_REVISION):$(LT_LIBCOAP_AGE)	\
   @libcoap_SYMBOLS@ \
-  -pie
+  -pie \
+  ${libxml2_LIBS}
 
 CTAGS_IGNORE=-I "coap_packet_extract_pbuf coap_pdu_from_pbuf"
 

@@ -292,7 +292,6 @@ msg_option_string(uint16_t option_type) {
   static struct option_desc_t options[] = {
     { COAP_OPTION_IF_MATCH, "If-Match" },
     { COAP_OPTION_URI_HOST, "Uri-Host" },
-    { COAP_OPTION_ETAG, "ETag" },
     { COAP_OPTION_IF_NONE_MATCH, "If-None-Match" },
     { COAP_OPTION_OBSERVE, "Observe" },
     { COAP_OPTION_URI_PORT, "Uri-Port" },

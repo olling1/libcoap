@@ -28,6 +28,9 @@ AC_CONFIG_MACRO_DIR([m4])
 m4_pattern_allow([AM_PROG_AR])
 AM_PROG_AR
 
+PKG_PROG_PKG_CONFIG([])
+PKG_CHECK_MODULES([libxml2], [libxml-2.0])
+
 # enable the automatically build of shared and static libraries, the unit
 # tests needs the static library
 LT_INIT([shared static])
@@ -323,7 +326,7 @@ case $host in
 
 	*)
 	AC_MSG_WARN([==> Currently unsupported operating system ${host}!])
-	AC_MSG_ERROR([==> If you can provide patches to support your operating system please write to '@PACKAGE_BUGREPORT@'.])
+	AC_MSG_ERROR([==> If you can provide patches to support your operating system please write to '$PACKAGE_BUGREPORT'.])
 esac
 
 # Exporting the PREDEFINED_CFLAGS definition
